@@ -8,20 +8,20 @@ import pycuda.driver as cuda
 import pycuda.gl as cuda_gl
 from pycuda.compiler import SourceModule
 import pycuda.gpuarray as gpuarray
-#import pycuda.curandom as curandom
 import pyglew as glew
 
-##Add Modules from other directories
-##sys.path.append( "/home/bruno/Desktop/Dropbox/Developer/pyCUDA/myLibraries" )
-##from myTools import *
+#Add Modules from other directories
+currentDirectory = os.getcwd()
+parentDirectory = currentDirectory[:currentDirectory.rfind("/")]
+animationDirectory = parentDirectory + "/animation2D"
+sys.path.extend( [animationDirectory] )
 
 
-#dev = setDevice()
-#cuda_gl.make_context(dev)
+nWidth = 512
+nHeight = 512
 
-nWidth = 512*2*2
-nHeight = 512*2
-nData = nWidth*nHeight
+
+
 
 
 
@@ -32,17 +32,17 @@ cuda_POB_ptr = None
 colorMap_rgba_d = None
 plot_rgba_d = None
 plotData_d = None
+background_h = None
+background_d = None
 
 get_rgbaKernel = None
 copyKernel = None
-block2D = (16,16, 1)
-grid2D = (nWidth/block2D[0], nHeight/block2D[1] ) 
+block2D_GL = None
+grid2D_GL = None 
 
 
 
 frames = 0
-plot_rgba = np.zeros(nData)
-solid = np.ones(nData)
 nCol = 236
 maxVar = 1.
 minVar = 0.
@@ -57,13 +57,15 @@ timer = 0.0
 
 
 def initCUDA():
-  global get_rgbaKernel, copyKernel
+  global get_rgbaKernel, copyKernel, block2D_GL, grid2D_GL
+  block2D_GL = (16,16, 1)
+  grid2D_GL = (nWidth/block2D_GL[0], nHeight/block2D_GL[1] ) 
   cudaAnimCode = SourceModule('''
   #include <stdint.h>
   #include <cuda.h>
 
   __global__ void get_rgba_kernel (int ncol, float minvar, float maxvar, float *plot_data, unsigned int *plot_rgba_data,
-				  unsigned int *cmap_rgba_data){
+				  unsigned int *cmap_rgba_data, int *background){
   // CUDA kernel to fill plot_rgba_data array for plotting    
     int t_i = blockIdx.x*blockDim.x + threadIdx.x;
     int t_j = blockIdx.y*blockDim.y + threadIdx.y;
@@ -71,18 +73,18 @@ def initCUDA():
 
     float frac = (plot_data[tid]-minvar)/(maxvar-minvar);
     int icol = (int)(frac * ncol);
-    plot_rgba_data[tid] = cmap_rgba_data[icol];
+    plot_rgba_data[tid] = background[tid]*cmap_rgba_data[icol];
   }
   
   ''')
   get_rgbaKernel = cudaAnimCode.get_function('get_rgba_kernel')
   print "CUDA 2D animation initialized"
 
-  
+
 def initData():  
-  global plot_rgba_d, colorMap_rgba_d, plotData_d
+  global plot_rgba_d, colorMap_rgba_d, plotData_d, background_d, background_h
   #print "Loading Color Map"
-  colorMap = np.loadtxt("cmap.dat")
+  colorMap = np.loadtxt(animationDirectory + "/cmap.dat")
   colorMap_rgba = []
   for i in range(colorMap.shape[0]):
     r, g, b = colorMap[i]
@@ -90,24 +92,20 @@ def initData():
   colorMap_rgba = np.array(colorMap_rgba)
   colorMap_rgba_h = np.array(colorMap_rgba).astype(np.uint32)
   colorMap_rgba_d = gpuarray.to_gpu( colorMap_rgba_h )
-  plot_rgba_h = np.zeros(nData).astype(np.uint32)
+  plot_rgba_h = np.zeros(nWidth*nHeight).astype(np.uint32)
   plot_rgba_d = gpuarray.to_gpu( plot_rgba_h )
-  plotData_h = np.random.rand(nData).astype(np.float32)
-  plotData_d = gpuarray.to_gpu(plotData_h)
+  plotData_h = np.random.rand(nWidth*nHeight).astype(np.float32) 
+  if background_h == None: background_h = np.ones( [nHeight, nWidth], dtype=np.int32 )  
+  if not background_d: background_d = gpuarray.to_gpu(background_h)
+  if not plotData_d: plotData_d = gpuarray.to_gpu(plotData_h)
 
 def get_rgba( ptr ):
   #global plotData_d, plot_rgba_d, colorMap_rgba_d
-  get_rgbaKernel(nCol, minVar, maxVar, plotData_d, np.intp(ptr), colorMap_rgba_d, grid=grid2D, block=block2D )
+  get_rgbaKernel(nCol, minVar, maxVar, plotData_d, np.intp(ptr), colorMap_rgba_d, background_d, grid=grid2D_GL, block=block2D_GL )
 
 
 
-def keyPressed(*args):
-  ESCAPE = '\033'
-  # If escape is pressed, kill everything.
-  if args[0] == ESCAPE:
-    print "Ending Simulation"
-    #cuda.Context.pop()
-    sys.exit()
+
 
 def stepFunc():
   #print "Default step function"
@@ -115,7 +113,6 @@ def stepFunc():
 
 
 def displayFunc():
-  global plot_rgba
   global frames, timer
   global cuda_POB
  
@@ -218,9 +215,11 @@ def computeFPS():
 
 def startGL():
   glutDisplayFunc(displayFunc)
-  #glutReshapeFunc(resize)
+  glutReshapeFunc(resize)
   glutIdleFunc(displayFunc)
-  glutKeyboardFunc( keyPressed )
+  glutKeyboardFunc( keyboard )
+  glutMouseFunc(mouse)
+  glutMotionFunc(mouseMotion)
   #import pycuda.autoinit
   print "Starting GLUT main loop..."
   glutMainLoop()
@@ -228,10 +227,109 @@ def startGL():
 
 def animate():
   if not GL_initialized: initGL()
-  import pycuda.gl.autoinit
+  #import pycuda.gl.autoinit
   initCUDA()
   createPBO()
   initData()
   startGL()
 
+nWidth_GL = nWidth
+nHeight_GL = nHeight
+def resize( w, h ):
+  global nWidth_GL, nHeight_GL
+  nWidth_GL, nHeight_GL = w, h
+  glViewport (0, 0, w, h)
+  glMatrixMode(GL_PROJECTION)
+  glLoadIdentity() 
+  glOrtho (0., nWidth, 0., nHeight, -200. ,200.)
+  glMatrixMode (GL_MODELVIEW)
+  glLoadIdentity()
+  #print nWidth_GL, nHeight_GL
   
+  
+
+
+
+def keyboard(*args):
+  ESCAPE = '\033'
+  # If escape is pressed, kill everything.
+  if args[0] == ESCAPE:
+    print "Ending Simulation"
+    #cuda.Context.pop()
+    sys.exit() 
+
+iPosOld, jPosOld = None, None
+backgroundFlag = 0
+def mouse( button, state, x, y ):
+  global iPosOld, jPosOld, backgroundFlag
+  xx, yy = float(x), float(y)
+  if button == GLUT_LEFT_BUTTON and state == GLUT_DOWN :
+    jPosOld = int( xx/nWidth_GL*nWidth )
+    iPosOld = int( (nHeight_GL - yy )/nHeight_GL*nHeight )
+    backgroundFlag = 0
+    #print iPosOld, jPosOld
+    
+    
+  if button == GLUT_RIGHT_BUTTON and state == GLUT_DOWN :  
+    jPosOld = int(xx/nWidth_GL*nWidth)
+    iPosOld = int( ( nHeight_GL - yy )/nHeight_GL*nHeight)
+    backgroundFlag = 1
+    #print iPosOld, jPosOld
+  background_h[iPosOld, jPosOld] = backgroundFlag  
+  background_d.set(background_h) 
+    #replot()
+
+#jMin = 10000
+#jMax = -1
+#iMin = 10000
+#iMax = -1    
+def mouseMotion( x, y ):
+  global jPosOld, iPosOld
+  xx, yy = float(x), float(y)
+  jPos = int( xx/nWidth_GL*nWidth )
+  iPos = int( (nHeight_GL - yy )/nHeight_GL*nHeight )
+  if (jPos < 0 or jPos >=nWidth) or iPos < 0 or iPos >=nHeight : return
+
+  if jPos <= jPosOld:
+    j1 = jPos
+    j2 = jPosOld
+    i1 = iPos
+    i2 = iPosOld
+  else:
+    j1 = jPosOld
+    j2 = jPos
+    i1 = iPosOld
+    i2 = iPos
+  iLast = i1
+  for j in range(j1,j2+1):
+    if j1 != j2: 
+      frac = float(j-j1)/float(j2-j1)
+      iNext = int(frac*(i2-i1)) + i1
+    else: iNext = i2
+    if iNext >= iLast:
+      background_h[iLast][j] = backgroundFlag
+      for i in range( iLast, iNext+1 ):
+	background_h[i][j] = backgroundFlag
+    else:
+      background_h[iLast][j] = backgroundFlag
+      for i in range(iNext, iLast+1):
+	background_h[i][j] = backgroundFlag
+    iLast = iNext
+  background_d.set(background_h)
+  jPosOld, iPosOld = jPos, iPos
+  
+  
+  #global iPosOld, jPosOld
+  #global jMin, jMax, iMin, iMax
+  #x0, y0 = iPosOld, jPosOld
+  #xx = max( min( x, nWidth_GL ), 0.0 )
+  #yy = max( min( nHeight - y, nHeight ), 0.0 )
+  
+  #xReal = xx/nWidth_GL*nWidth
+  #yReal = yy/nHeight_GL*nHeight
+  
+  #jMin = int(min( x0, xReal))
+  #jMax = int(max( x0, xReal))
+  #iMin = int(min( y0, yReal))
+  #iMax = int(max( y0, yReal))
+  #print " Reploting: ( {0} , {1} , {2} , {3} )".format(xMin, xMax, yMin, yMax)
