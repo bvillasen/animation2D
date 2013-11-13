@@ -47,8 +47,9 @@ nCol = 236
 maxVar = 1.
 minVar = 0.
 nCol = np.int32( nCol )
-minVar = np.float32( minVar )
-maxVar = np.float32( maxVar )
+
+usingDouble = False
+cudaPrecision = "float"
 
 frameCount = 0
 fpsCount = 0
@@ -57,14 +58,20 @@ timer = 0.0
 
 
 def initCUDA():
-  global get_rgbaKernel, copyKernel, block2D_GL, grid2D_GL
+  global get_rgbaKernel, copyKernel, block2D_GL, grid2D_GL, maxVar, minVar, cudaPrecision
   block2D_GL = (16,16, 1)
-  grid2D_GL = (nWidth/block2D_GL[0], nHeight/block2D_GL[1] ) 
+  grid2D_GL = (nWidth/block2D_GL[0], nHeight/block2D_GL[1] )
+  maxVar = np.float32(maxVar)
+  minVar = np.float32(minVar)
+  if usingDouble: 
+    cudaPrecision = "double"
+    maxVar = np.float64(maxVar)
+    minVar = np.float64(minVar)
   cudaAnimCode = SourceModule('''
   #include <stdint.h>
   #include <cuda.h>
 
-  __global__ void get_rgba_kernel (int ncol, float minvar, float maxvar, float *plot_data, unsigned int *plot_rgba_data,
+  __global__ void get_rgba_kernel (int ncol, %(cudaP)s minvar, %(cudaP)s maxvar, %(cudaP)s *plot_data, unsigned int *plot_rgba_data,
 				  unsigned int *cmap_rgba_data, int *background){
   // CUDA kernel to fill plot_rgba_data array for plotting    
     int t_i = blockIdx.x*blockDim.x + threadIdx.x;
@@ -76,7 +83,7 @@ def initCUDA():
     plot_rgba_data[tid] = background[tid]*cmap_rgba_data[icol];
   }
   
-  ''')
+  '''%{"cudaP": cudaPrecision})
   get_rgbaKernel = cudaAnimCode.get_function('get_rgba_kernel')
   print "CUDA 2D animation initialized"
 
@@ -95,6 +102,7 @@ def initData():
   plot_rgba_h = np.zeros(nWidth*nHeight).astype(np.uint32)
   plot_rgba_d = gpuarray.to_gpu( plot_rgba_h )
   plotData_h = np.random.rand(nWidth*nHeight).astype(np.float32) 
+  if usingDouble: plotData_h = np.random.rand(nWidth*nHeight).astype(np.float64) 
   if background_h == None: background_h = np.ones( [nHeight, nWidth], dtype=np.int32 )  
   if not background_d: background_d = gpuarray.to_gpu(background_h)
   if not plotData_d: plotData_d = gpuarray.to_gpu(plotData_h)
