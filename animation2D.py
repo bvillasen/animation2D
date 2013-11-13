@@ -227,7 +227,8 @@ def startGL():
   glutIdleFunc(displayFunc)
   glutKeyboardFunc( keyboard )
   glutMouseFunc(mouse)
-  glutMotionFunc(mouseMotion)
+  if backgroundType == 'point': glutMotionFunc(mouseMotion_point)
+  if backgroundType == 'square': glutMotionFunc(mouseMotion_square)
   #import pycuda.autoinit
   print "Starting GLUT main loop..."
   glutMainLoop()
@@ -268,8 +269,10 @@ def keyboard(*args):
 
 iPosOld, jPosOld = None, None
 backgroundFlag = 0
+backgroundType = "point"
 def mouse( button, state, x, y ):
-  global iPosOld, jPosOld, backgroundFlag
+  global iPosOld, jPosOld, backgroundFlag, backgroundType
+  global jMin, jMax, iMin, iMax
   xx, yy = float(x), float(y)
   if button == GLUT_LEFT_BUTTON and state == GLUT_DOWN :
     jPosOld = int( xx/nWidth_GL*nWidth )
@@ -282,16 +285,14 @@ def mouse( button, state, x, y ):
     jPosOld = int(xx/nWidth_GL*nWidth)
     iPosOld = int( ( nHeight_GL - yy )/nHeight_GL*nHeight)
     backgroundFlag = 1
-    #print iPosOld, jPosOld
-  background_h[iPosOld, jPosOld] = backgroundFlag  
-  background_d.set(background_h) 
-    #replot()
+    if backgroundType == "square":replotFunc()
+  if backgroundType == "point":
+    background_h[iPosOld, jPosOld] = backgroundFlag  
+    background_d.set(background_h) 
+    
 
-#jMin = 10000
-#jMax = -1
-#iMin = 10000
-#iMax = -1    
-def mouseMotion( x, y ):
+   
+def mouseMotion_point( x, y ):
   global jPosOld, iPosOld
   xx, yy = float(x), float(y)
   jPos = int( xx/nWidth_GL*nWidth )
@@ -325,19 +326,35 @@ def mouseMotion( x, y ):
     iLast = iNext
   background_d.set(background_h)
   jPosOld, iPosOld = jPos, iPos
+
+jMin = 10000
+jMax = -1
+iMin = 10000
+iMax = -1   
+def mouseMotion_square( x, y ):  
+  global iPosOld, jPosOld
+  global jMin, jMax, iMin, iMax
+  x0, y0 = jPosOld, iPosOld
+  xx = max( min( x, nWidth_GL ), 0.0 )
+  yy = max( min( nHeight_GL - y, nHeight_GL ), 0.0 )
   
+  xReal = float(xx)/nWidth_GL*nWidth
+  yReal = float(yy)/nHeight_GL*nHeight
   
-  #global iPosOld, jPosOld
-  #global jMin, jMax, iMin, iMax
-  #x0, y0 = iPosOld, jPosOld
-  #xx = max( min( x, nWidth_GL ), 0.0 )
-  #yy = max( min( nHeight - y, nHeight ), 0.0 )
+  jMin = min( x0, int(xReal))
+  jMax = max( x0, int(xReal))
+  iMin = min( y0, int(yReal))
+  iMax = max( y0, int(yReal))
+  mouseMaskFunc()
+  #background_h[iMin:iMax, jMin:jMax] = 0
+  #background_d.set(background_h)
+  #print  jMin, jMax, iMin, iMax
+  #print " Reploting: ( {0} , {1} , {2} , {3} )".format(jMin, jMax, iMin, iMax)
   
-  #xReal = xx/nWidth_GL*nWidth
-  #yReal = yy/nHeight_GL*nHeight
-  
-  #jMin = int(min( x0, xReal))
-  #jMax = int(max( x0, xReal))
-  #iMin = int(min( y0, yReal))
-  #iMax = int(max( y0, yReal))
-  #print " Reploting: ( {0} , {1} , {2} , {3} )".format(xMin, xMax, yMin, yMax)
+def replotFunc():
+  print "No specified replot function"
+  return 0
+
+def mouseMaskFunc():
+  print "No specified maskFunc function"
+  return 0
