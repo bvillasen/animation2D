@@ -50,6 +50,7 @@ nCol = np.int32( nCol )
 
 usingDouble = False
 cudaPrecision = "float"
+usingGrayScale = False
 
 frameCount = 0
 fpsCount = 0
@@ -91,7 +92,8 @@ def initCUDA():
 def initData():  
   global plot_rgba_d, colorMap_rgba_d, plotData_d, background_d, background_h
   #print "Loading Color Map"
-  colorMap = np.loadtxt(animationDirectory + "/cmap.dat")
+  colorMapFile = "/cmapGray.dat" if usingGrayScale else "/cmap.dat"
+  colorMap = np.loadtxt(animationDirectory + colorMapFile)
   colorMap_rgba = []
   for i in range(colorMap.shape[0]):
     r, g, b = colorMap[i]
