@@ -8,7 +8,7 @@ import pycuda.driver as cuda
 import pycuda.gl as cuda_gl
 from pycuda.compiler import SourceModule
 import pycuda.gpuarray as gpuarray
-import pyglew as glew
+#import pyglew as glew
 
 #Add Modules from other directories
 currentDirectory = os.getcwd()
@@ -20,9 +20,7 @@ sys.path.extend( [animationDirectory] )
 nWidth = 512
 nHeight = 512
 
-
-
-
+windowTitle = ''
 
 
 gl_Tex = None
@@ -44,7 +42,7 @@ grid2D_GL = None
 
 frames = 0
 nCol = 236
-maxVar = 1.
+maxVar = 1.001
 minVar = 0.
 nCol = np.int32( nCol )
 
@@ -176,13 +174,13 @@ def initGL():
   glutInitWindowSize(nWidth, nHeight)
   glutInitWindowPosition(50, 50)
   glutCreateWindow("Window")
-  glew.glewInit()
+  #glew.glewInit()
   glClearColor(0.0, 0.0, 0.0, 0.0)
   glMatrixMode(GL_PROJECTION)
   glLoadIdentity()
   glOrtho(0,nWidth,0.,nHeight, -200.0, 200.0)
   GL_initialized = True
-  print "OpenGL initialized"
+  print "\nOpenGL initialized"
   
 
   
@@ -220,7 +218,7 @@ def computeFPS():
     fpsCount += 1
     if fpsCount == fpsLimit:
         ifps = 1.0 /timer
-        glutSetWindowTitle("CUDA 2D animation: %f fps" % ifps)
+        glutSetWindowTitle(windowTitle + "      fps={0:0.2f}".format( float(ifps) ))
         fpsCount = 0
 
 def startGL():
@@ -228,7 +226,9 @@ def startGL():
   glutReshapeFunc(resize)
   glutIdleFunc(displayFunc)
   glutKeyboardFunc( keyboard )
+  glutSpecialFunc(specialKeys)
   glutMouseFunc(mouse)
+  #glutIdleFunc( idleFunc )
   if backgroundType == 'point': glutMotionFunc(mouseMotion_point)
   if backgroundType == 'square': glutMotionFunc(mouseMotion_square)
   #import pycuda.autoinit
@@ -237,8 +237,10 @@ def startGL():
 
 
 def animate():
+  global windowTitle
   if not GL_initialized: initGL()
   #import pycuda.gl.autoinit
+  if windowTitle == '': windowTitle = "CUDA 2D animation"
   initCUDA()
   createPBO()
   initData()
@@ -268,6 +270,13 @@ def keyboard(*args):
     print "Ending Simulation"
     #cuda.Context.pop()
     sys.exit() 
+
+def specialKeys( key, x, y ):
+  if key==GLUT_KEY_UP:
+    print "UP-arrow pressed"
+  if key==GLUT_KEY_DOWN:
+    print "DOWN-arrow pressed"
+
 
 iPosOld, jPosOld = None, None
 backgroundFlag = 0
@@ -360,3 +369,8 @@ def replotFunc():
 def mouseMaskFunc():
   print "No specified maskFunc function"
   return 0
+
+def idleFunc():
+  print "No specified idle function"
+  return 0
+  
