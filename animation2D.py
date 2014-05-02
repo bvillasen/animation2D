@@ -55,6 +55,13 @@ fpsCount = 0
 fpsLimit = 8
 timer = 0.0
 
+viewXmin_o, viewXmax_o = -nWidth//2, nWidth//2
+viewYmin_o, viewYmax_o = -nHeight//2, nHeight//2
+
+
+viewXmin, viewXmax = -nWidth//2, nWidth//2
+viewYmin, viewYmax = -nHeight//2, nHeight//2
+viewZmin, viewZmax = -200, 200
 
 def initCUDA():
   global get_rgbaKernel, copyKernel, block2D_GL, grid2D_GL, maxVar, minVar, cudaPrecision
@@ -71,7 +78,7 @@ def initCUDA():
   #include <cuda.h>
 
   __global__ void get_rgba_kernel (int ncol, %(cudaP)s minvar, %(cudaP)s maxvar, %(cudaP)s *plot_data, unsigned int *plot_rgba_data,
-				  unsigned int *cmap_rgba_data, int *background){
+				  unsigned int *cmap_rgba_data, unsigned char *background){
   // CUDA kernel to fill plot_rgba_data array for plotting    
     int t_i = blockIdx.x*blockDim.x + threadIdx.x;
     int t_j = blockIdx.y*blockDim.y + threadIdx.y;
@@ -103,7 +110,7 @@ def initData():
   plot_rgba_d = gpuarray.to_gpu( plot_rgba_h )
   plotData_h = np.random.rand(nWidth*nHeight).astype(np.float32) 
   if usingDouble: plotData_h = np.random.rand(nWidth*nHeight).astype(np.float64) 
-  if background_h == None: background_h = np.ones( [nHeight, nWidth], dtype=np.int32 )  
+  if background_h == None: background_h = np.ones( [nHeight, nWidth], dtype=np.uint8 )  
   if not background_d: background_d = gpuarray.to_gpu(background_h)
   if not plotData_d: plotData_d = gpuarray.to_gpu(plotData_h)
 
@@ -153,13 +160,13 @@ def displayFunc():
   glClear(GL_COLOR_BUFFER_BIT)
   glBegin(GL_QUADS)
   glTexCoord2f (0.0, 0.0)
-  glVertex3f (0.0, 0.0, 0.0)
+  glVertex3f (viewXmin, viewYmin, 0.0)
   glTexCoord2f (1.0, 0.0)
-  glVertex3f (nWidth, 0.0, 0.0)
+  glVertex3f (viewXmax, viewYmin, 0.0)
   glTexCoord2f (1.0, 1.0)
-  glVertex3f (nWidth, nHeight, 0.0)
+  glVertex3f (viewXmax, viewYmax, 0.0)
   glTexCoord2f (0.0, 1.0)
-  glVertex3f (0.0, nHeight, 0.0)
+  glVertex3f (viewXmin, viewYmax, 0.0)
   glEnd()
   timer = time.time()-timer
   computeFPS()
@@ -178,7 +185,10 @@ def initGL():
   glClearColor(0.0, 0.0, 0.0, 0.0)
   glMatrixMode(GL_PROJECTION)
   glLoadIdentity()
-  glOrtho(0,nWidth,0.,nHeight, -200.0, 200.0)
+  #glOrtho(0,nWidth,0.,nHeight, -200.0, 200.0)
+  glOrtho( viewXmin, viewXmax, 
+				viewYmin, viewYmax,
+				viewZmin, viewZmax)
   GL_initialized = True
   print "\nOpenGL initialized"
   
@@ -205,8 +215,8 @@ def createPBO():
   global gl_PBO, cuda_POB
   
   gl_PBO = glGenBuffers(1)
-  glBindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, gl_PBO)
-  glBufferData(GL_PIXEL_UNPACK_BUFFER_ARB, nWidth*4*nHeight, None, GL_STREAM_COPY)
+  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, gl_PBO)
+  glBufferData(GL_PIXEL_UNPACK_BUFFER, nWidth*4*nHeight, None, GL_STREAM_COPY)
   cuda_POB = cuda_gl.RegisteredBuffer(long(gl_PBO))
   #cuda_POB_map = cuda_POB.map()
   #cuda_POB_ptr, cuda_POB_size = cuda_POB_map.device_ptr_and_size()
@@ -231,6 +241,7 @@ def startGL():
   #glutIdleFunc( idleFunc )
   if backgroundType == 'point': glutMotionFunc(mouseMotion_point)
   if backgroundType == 'square': glutMotionFunc(mouseMotion_square)
+  if backgroundType == 'move': glutMotionFunc(mouseMotion_move)
   #import pycuda.autoinit
   print "Starting GLUT main loop..."
   glutMainLoop()
@@ -250,13 +261,18 @@ nWidth_GL = nWidth
 nHeight_GL = nHeight
 def resize( w, h ):
   global nWidth_GL, nHeight_GL
+  global zoomed
   nWidth_GL, nHeight_GL = w, h
   glViewport (0, 0, w, h)
   glMatrixMode(GL_PROJECTION)
   glLoadIdentity() 
-  glOrtho (0., nWidth, 0., nHeight, -200. ,200.)
+  #glOrtho (0., nWidth, 0., nHeight, -200. ,200.)
+  glOrtho( viewXmin, viewXmax, 
+				viewYmin, viewYmax,
+				viewZmin, viewZmax)
   glMatrixMode (GL_MODELVIEW)
   glLoadIdentity()
+  zoomed = 0
   #print nWidth_GL, nHeight_GL
   
   
@@ -281,17 +297,55 @@ def specialKeys( key, x, y ):
 iPosOld, jPosOld = None, None
 backgroundFlag = 0
 backgroundType = "point"
+zoomed = 0
+zoomFactor = 1.5
+ox, oy = 0, 0
+
 def mouse( button, state, x, y ):
   global iPosOld, jPosOld, backgroundFlag, backgroundType
   global jMin, jMax, iMin, iMax
+  global viewXmin, viewXmax, viewYmin, viewYmax, zoomed
+  global viewXmin_o, viewXmax_o, viewYmin_o, viewYmax_o, zoomed
+  global ox, oy
+  ox, oy = x, y
+  if button == 3 and state == GLUT_DOWN:
+    #print 'wheel up'
+    viewXmin *= zoomFactor
+    viewXmax *= zoomFactor
+    viewYmin *= zoomFactor
+    viewYmax *= zoomFactor
+    #viewXmin_o *= zoomFactor
+    #viewXmax_o *= zoomFactor
+    #viewYmin_o *= zoomFactor
+    #viewYmax_o *= zoomFactor
+    zoomed += 1
+    #resize(nWidth, nHeight)
+    return
+  if button == 4 and state == GLUT_DOWN:
+    #print 'wheel up'
+    if zoomed > 0:
+      viewXmin /= zoomFactor
+      viewXmax /= zoomFactor
+      viewYmin /= zoomFactor
+      viewYmax /= zoomFactor
+      #viewXmin_o /= zoomFactor
+      #viewXmax_o /= zoomFactor
+      #viewYmin_o /= zoomFactor
+      #viewYmax_o /= zoomFactor
+      if viewXmax < viewXmax_o: viewXmax = viewXmax_o
+      if viewXmin > viewXmin_o: viewXmin = viewXmin_o
+      if viewYmax < viewYmax_o: viewYmax = viewYmax_o
+      if viewYmin > viewYmin_o: viewYmin = viewYmin_o
+      zoomed -= 1
+      if zoomed == 0: viewXmax, viewXmin, viewYmax, viewYmin = viewXmax_o, viewXmin_o, viewYmax_o, viewYmin_o 
+    #resize(nWidth, nHeight)
+    return  
   xx, yy = float(x), float(y)
   if button == GLUT_LEFT_BUTTON and state == GLUT_DOWN :
     jPosOld = int( xx/nWidth_GL*nWidth )
     iPosOld = int( (nHeight_GL - yy )/nHeight_GL*nHeight )
     backgroundFlag = 0
     #print iPosOld, jPosOld
-    
-    
   if button == GLUT_RIGHT_BUTTON and state == GLUT_DOWN :  
     jPosOld = int(xx/nWidth_GL*nWidth)
     iPosOld = int( ( nHeight_GL - yy )/nHeight_GL*nHeight)
@@ -302,6 +356,19 @@ def mouse( button, state, x, y ):
     background_d.set(background_h) 
     
 
+def mouseMotion_move(x,y):
+  global ox, oy
+  global viewXmin, viewXmax, viewYmin, viewYmax
+  dx, dy = x-ox, y-oy
+  moveX = dx/8.*zoomed*(nWidth_GL/nWidth)
+  moveY = -dy/8.*zoomed*(nHeight_GL/nHeight)
+  if (viewXmin + moveX < viewXmin_o and viewXmax + moveX > viewXmax_o): 
+    viewXmin += moveX
+    viewXmax += moveX
+  if (viewYmin + moveY < viewYmin_o and viewYmax + moveY > viewYmax_o): 
+    viewYmin += moveY
+    viewYmax += moveY
+  ox, oy = x, y
    
 def mouseMotion_point( x, y ):
   global jPosOld, iPosOld
@@ -355,7 +422,7 @@ def mouseMotion_square( x, y ):
   jMin = min( x0, int(xReal))
   jMax = max( x0, int(xReal))
   iMin = min( y0, int(yReal))
-  iMax = max( y0, int(yReal))
+  iMax = max( y0, int(yReal)) 
   mouseMaskFunc()
   #background_h[iMin:iMax, jMin:jMax] = 0
   #background_d.set(background_h)
