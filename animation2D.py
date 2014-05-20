@@ -38,7 +38,8 @@ copyKernel = None
 block2D_GL = None
 grid2D_GL = None 
 
-
+showPoint = False
+onePoint = ( 0. ,0. )
 
 frames = 0
 nCol = 236
@@ -133,13 +134,9 @@ def displayFunc():
  
   timer = time.time()
   frames += 1
-  
-  stepFunc()
-  
-  
+  stepFunc() 
   cuda_POB_map = cuda_POB.map()
   cuda_POB_ptr, cuda_POB_size = cuda_POB_map.device_ptr_and_size()
-
   get_rgba( cuda_POB_ptr ) 
   cuda_POB_map.unmap()
   
@@ -168,6 +165,16 @@ def displayFunc():
   glTexCoord2f (0.0, 1.0)
   glVertex3f (viewXmin, viewYmax, 0.0)
   glEnd()
+  
+  if showPoint:
+    #Draw one point in top of image
+    glPointSize(12)
+    #glColor3f( 0.95, 0.207, 0.031 );
+    glBegin(GL_POINTS)  
+    #glColor3f( 0.95, 0.207, 0.031 );
+    glVertex3f ( onePoint[0]*(viewXmax_o-viewXmin_o), onePoint[1]*(viewYmax_o-viewYmin_o), 1.)
+    glEnd()
+  
   timer = time.time()-timer
   computeFPS()
   glutSwapBuffers()
@@ -175,16 +182,18 @@ def displayFunc():
 GL_initialized = False  
 def initGL():
   global GL_initialized
+  global viewXmin, viewXmax, viewYmin, viewYmax
   if GL_initialized: return
   glutInit()
   glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB)
   glutInitWindowSize(nWidth, nHeight)
-  glutInitWindowPosition(50, 50)
+  #glutInitWindowPosition(50, 50)
   glutCreateWindow("Window")
   #glew.glewInit()
-  glClearColor(0.0, 0.0, 0.0, 0.0)
+  glClearColor(1.0, 0.0, 0.0, 0.0)
   glMatrixMode(GL_PROJECTION)
   glLoadIdentity()
+  viewXmin, viewXmax, viewYmin, viewYmax = viewXmin_o, viewXmax_o, viewYmin_o, viewYmax_o
   #glOrtho(0,nWidth,0.,nHeight, -200.0, 200.0)
   glOrtho( viewXmin, viewXmax, 
 				viewYmin, viewYmax,
