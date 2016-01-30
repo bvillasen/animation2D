@@ -2,7 +2,7 @@ from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
 from OpenGL.GL.ARB.vertex_buffer_object import *
-import numpy as np, Image
+import numpy as np
 import sys, time, os
 import pycuda.driver as cuda
 import pycuda.gl as cuda_gl
@@ -168,11 +168,11 @@ def displayFunc():
   
   if showPoint:
     #Draw one point in top of image
-    glPointSize(12)
+    glPointSize(15)
     #glColor3f( 0.95, 0.207, 0.031 );
     glBegin(GL_POINTS)  
     #glColor3f( 0.95, 0.207, 0.031 );
-    glVertex3f ( onePoint[0]*(viewXmax_o-viewXmin_o), onePoint[1]*(viewYmax_o-viewYmin_o), 1.)
+    glVertex3f ( viewXmin_o+ onePoint[0]/2, viewYmin_o+ onePoint[1]/2, 1.)
     glEnd()
   
   timer = time.time()-timer
